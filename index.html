@@ -2,6 +2,9 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Tanda Tangan MyInternship</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -70,8 +73,14 @@
       width: 100%;
       max-width: 420px;
       display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .btn-row {
+      display: flex;
       gap: 12px;
-      margin-top: 16px;
+      width: 100%;
     }
     button {
       flex: 1;
@@ -90,6 +99,10 @@
     button:active {
       opacity: 0.8;
     }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
     .btn-clear {
       background: #e9ecef;
       color: #495057;
@@ -97,6 +110,11 @@
     .btn-submit {
       background: #007bff;
       color: #ffffff;
+    }
+    .version-hint {
+      text-align: center;
+      font-size: 11px;
+      color: #999;
     }
   </style>
 </head>
@@ -112,24 +130,27 @@
   </div>
 
   <div class="footer">
-    <button class="btn-clear" id="btnClear">🔄 Ulangi</button>
-    <button class="btn-submit" id="btnSubmit">✅ Selesai</button>
+    <div class="btn-row">
+      <button class="btn-clear" id="btnClear">🔄 Ulangi</button>
+      <button class="btn-submit" id="btnSubmit">✅ Selesai</button>
+    </div>
+    <div class="version-hint" id="versionHint">v1.2 • Siap</div>
   </div>
 
   <script>
     const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
     if (tg) {
-      tg.ready();
-      tg.expand();
-      if (tg.MainButton) {
-        tg.MainButton.setText('✅ Selesai & Kirim');
-        tg.MainButton.onClick(submitSignature);
-      }
+      try {
+        tg.ready();
+        tg.expand();
+      } catch (_) {}
     }
 
     const canvas = document.getElementById('pad');
     const container = document.getElementById('container');
     const watermark = document.getElementById('watermark');
+    const versionHint = document.getElementById('versionHint');
+    const btnSubmit = document.getElementById('btnSubmit');
     const ctx = canvas.getContext('2d');
 
     function resizeCanvas() {
@@ -176,7 +197,6 @@
       ctx.moveTo(pos.x, pos.y);
       currentStroke = [[pos.normX, pos.normY]];
       strokes.push(currentStroke);
-      if (tg && tg.MainButton) tg.MainButton.show();
     }
 
     function moveDraw(e) {
@@ -184,7 +204,7 @@
       e.preventDefault();
       const pos = getPos(e);
       const dist = Math.hypot(pos.x - lastX, pos.y - lastY);
-      if (dist < 2.5) return; // Sampling jarak agar payload ringkas (<4KB batas Telegram)
+      if (dist < 3.0) return; // Sampling jarak 3px agar payload efisien
       lastX = pos.x;
       lastY = pos.y;
       ctx.lineTo(pos.x, pos.y);
@@ -209,27 +229,56 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       strokes = [];
       watermark.style.display = 'block';
-      if (tg && tg.MainButton) tg.MainButton.hide();
+      btnSubmit.disabled = false;
+      btnSubmit.innerHTML = '✅ Selesai';
+      versionHint.innerText = 'v1.2 • Kanvas dibersihkan';
     });
 
     function submitSignature() {
       if (strokes.length === 0) {
-        alert('Silakan tanda tangan terlebih dahulu sebelum mengirim.');
+        alert('Silakan goreskan tanda tangan terlebih dahulu sebelum menekan tombol Selesai.');
         return;
       }
 
-      // Payload ringkas: strokes saja, pasti di bawah 4096 bytes batas Telegram
-      const payload = JSON.stringify({ strokes: strokes });
+      btnSubmit.disabled = true;
+      btnSubmit.innerHTML = '⏳ Mengirim...';
+      versionHint.innerText = 'v1.2 • Memproses data...';
+
+      // Ringkas stroke agar pasti jauh di bawah 4096 bytes batas Telegram
+      let compactStrokes = strokes;
+      let payload = JSON.stringify({ strokes: compactStrokes });
+      while (payload.length > 3000) {
+        compactStrokes = compactStrokes.map(stroke => {
+          if (stroke.length <= 2) return stroke;
+          return stroke.filter((_, idx) => idx === 0 || idx === stroke.length - 1 || idx % 2 === 0);
+        });
+        payload = JSON.stringify({ strokes: compactStrokes });
+      }
+
+      versionHint.innerText = 'v1.2 • Mengirim ' + payload.length + ' bytes...';
 
       if (tg) {
-        tg.sendData(payload);
-        tg.close();
+        try {
+          tg.sendData(payload);
+          versionHint.innerText = 'v1.2 • Terkirim, menutup...';
+          // Fallback timer jika tg.sendData tidak otomatis menutup webview
+          setTimeout(() => {
+            try { tg.close(); } catch (_) {}
+          }, 400);
+        } catch (err) {
+          alert('Gagal mengirim ke Telegram: ' + err.message);
+          btnSubmit.disabled = false;
+          btnSubmit.innerHTML = '✅ Selesai';
+          versionHint.innerText = 'v1.2 • Error: ' + err.message;
+        }
       } else {
         alert('Tanda tangan siap! Silakan gunakan di aplikasi Telegram.');
+        btnSubmit.disabled = false;
+        btnSubmit.innerHTML = '✅ Selesai';
       }
     }
 
-    document.getElementById('btnSubmit').addEventListener('click', submitSignature);
+    btnSubmit.addEventListener('click', submitSignature);
   </script>
 </body>
 </html>
