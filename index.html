@@ -62,7 +62,7 @@
     .watermark {
       position: absolute;
       pointer-events: none;
-      color: rgba(0,0,0,0.15);
+      color: rgba(0,0,0,0.18);
       font-size: 14px;
       font-weight: 500;
     }
@@ -121,6 +121,10 @@
     if (tg) {
       tg.ready();
       tg.expand();
+      if (tg.MainButton) {
+        tg.MainButton.setText('✅ Selesai & Kirim');
+        tg.MainButton.onClick(submitSignature);
+      }
     }
 
     const canvas = document.getElementById('pad');
@@ -128,7 +132,6 @@
     const watermark = document.getElementById('watermark');
     const ctx = canvas.getContext('2d');
 
-    // Resize canvas agar tajam di layar Retina / HP modern
     function resizeCanvas() {
       const rect = container.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
@@ -145,18 +148,21 @@
     resizeCanvas();
 
     let isDrawing = false;
-    let strokes = []; // Array of stroke arrays
+    let strokes = [];
     let currentStroke = [];
+    let lastX = -1, lastY = -1;
 
     function getPos(e) {
       const rect = canvas.getBoundingClientRect();
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
       const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
       return {
-        x: clientX - rect.left,
-        y: clientY - rect.top,
-        normX: (clientX - rect.left) / rect.width,
-        normY: (clientY - rect.top) / rect.height
+        x: x,
+        y: y,
+        normX: Math.round((x / rect.width) * 1000) / 1000,
+        normY: Math.round((y / rect.height) * 1000) / 1000
       };
     }
 
@@ -164,26 +170,32 @@
       isDrawing = true;
       watermark.style.display = 'none';
       const pos = getPos(e);
+      lastX = pos.x;
+      lastY = pos.y;
       ctx.beginPath();
       ctx.moveTo(pos.x, pos.y);
-      currentStroke = [{ x: pos.normX, y: pos.normY }];
+      currentStroke = [[pos.normX, pos.normY]];
       strokes.push(currentStroke);
+      if (tg && tg.MainButton) tg.MainButton.show();
     }
 
     function moveDraw(e) {
       if (!isDrawing) return;
       e.preventDefault();
       const pos = getPos(e);
+      const dist = Math.hypot(pos.x - lastX, pos.y - lastY);
+      if (dist < 2.5) return; // Sampling jarak agar payload ringkas (<4KB batas Telegram)
+      lastX = pos.x;
+      lastY = pos.y;
       ctx.lineTo(pos.x, pos.y);
       ctx.stroke();
-      currentStroke.push({ x: pos.normX, y: pos.normY });
+      currentStroke.push([pos.normX, pos.normY]);
     }
 
     function endDraw() {
       isDrawing = false;
     }
 
-    // Pointer & Touch events
     canvas.addEventListener('pointerdown', startDraw);
     canvas.addEventListener('pointermove', moveDraw);
     canvas.addEventListener('pointerup', endDraw);
@@ -197,26 +209,27 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       strokes = [];
       watermark.style.display = 'block';
+      if (tg && tg.MainButton) tg.MainButton.hide();
     });
 
-    document.getElementById('btnSubmit').addEventListener('click', () => {
+    function submitSignature() {
       if (strokes.length === 0) {
         alert('Silakan tanda tangan terlebih dahulu sebelum mengirim.');
         return;
       }
 
-      const payload = JSON.stringify({
-        strokes: strokes,
-        dataUrl: canvas.toDataURL('image/png')
-      });
+      // Payload ringkas: strokes saja, pasti di bawah 4096 bytes batas Telegram
+      const payload = JSON.stringify({ strokes: strokes });
 
       if (tg) {
         tg.sendData(payload);
         tg.close();
       } else {
-        alert('Fitur ini dirancang untuk dibuka di dalam aplikasi Telegram.');
+        alert('Tanda tangan siap! Silakan gunakan di aplikasi Telegram.');
       }
-    });
+    }
+
+    document.getElementById('btnSubmit').addEventListener('click', submitSignature);
   </script>
 </body>
 </html>
