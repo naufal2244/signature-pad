@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Tanda Tangan MyInternship</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--tg-theme-bg-color, #f4f6f9);
+      color: var(--tg-theme-text-color, #222);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      height: 100vh;
+      padding: 16px;
+      overflow: hidden;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 12px;
+    }
+    .header h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .header p {
+      font-size: 13px;
+      color: var(--tg-theme-hint-color, #666);
+    }
+    .canvas-container {
+      width: 100%;
+      max-width: 420px;
+      flex: 1;
+      background: #ffffff;
+      border: 2px dashed #007bff;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+      position: relative;
+      touch-action: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+    .watermark {
+      position: absolute;
+      pointer-events: none;
+      color: rgba(0,0,0,0.15);
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .footer {
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    button {
+      flex: 1;
+      padding: 14px;
+      font-size: 15px;
+      font-weight: 600;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: opacity 0.2s;
+    }
+    button:active {
+      opacity: 0.8;
+    }
+    .btn-clear {
+      background: #e9ecef;
+      color: #495057;
+    }
+    .btn-submit {
+      background: #007bff;
+      color: #ffffff;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>✍️ Tanda Tangan Digital</h2>
+    <p>Goreskan tanda tangan Anda dengan jari di kotak bawah ini</p>
+  </div>
+
+  <div class="canvas-container" id="container">
+    <div class="watermark" id="watermark">Goreskan jari di sini...</div>
+    <canvas id="pad"></canvas>
+  </div>
+
+  <div class="footer">
+    <button class="btn-clear" id="btnClear">🔄 Ulangi</button>
+    <button class="btn-submit" id="btnSubmit">✅ Selesai</button>
+  </div>
+
+  <script>
+    const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+    }
+
+    const canvas = document.getElementById('pad');
+    const container = document.getElementById('container');
+    const watermark = document.getElementById('watermark');
+    const ctx = canvas.getContext('2d');
+
+    // Resize canvas agar tajam di layar Retina / HP modern
+    function resizeCanvas() {
+      const rect = container.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#111111';
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    let isDrawing = false;
+    let strokes = []; // Array of stroke arrays
+    let currentStroke = [];
+
+    function getPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return {
+        x: clientX - rect.left,
+        y: clientY - rect.top,
+        normX: (clientX - rect.left) / rect.width,
+        normY: (clientY - rect.top) / rect.height
+      };
+    }
+
+    function startDraw(e) {
+      isDrawing = true;
+      watermark.style.display = 'none';
+      const pos = getPos(e);
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y);
+      currentStroke = [{ x: pos.normX, y: pos.normY }];
+      strokes.push(currentStroke);
+    }
+
+    function moveDraw(e) {
+      if (!isDrawing) return;
+      e.preventDefault();
+      const pos = getPos(e);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+      currentStroke.push({ x: pos.normX, y: pos.normY });
+    }
+
+    function endDraw() {
+      isDrawing = false;
+    }
+
+    // Pointer & Touch events
+    canvas.addEventListener('pointerdown', startDraw);
+    canvas.addEventListener('pointermove', moveDraw);
+    canvas.addEventListener('pointerup', endDraw);
+    canvas.addEventListener('pointercancel', endDraw);
+
+    canvas.addEventListener('touchstart', startDraw, { passive: false });
+    canvas.addEventListener('touchmove', moveDraw, { passive: false });
+    canvas.addEventListener('touchend', endDraw);
+
+    document.getElementById('btnClear').addEventListener('click', () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      strokes = [];
+      watermark.style.display = 'block';
+    });
+
+    document.getElementById('btnSubmit').addEventListener('click', () => {
+      if (strokes.length === 0) {
+        alert('Silakan tanda tangan terlebih dahulu sebelum mengirim.');
+        return;
+      }
+
+      const payload = JSON.stringify({
+        strokes: strokes,
+        dataUrl: canvas.toDataURL('image/png')
+      });
+
+      if (tg) {
+        tg.sendData(payload);
+        tg.close();
+      } else {
+        alert('Fitur ini dirancang untuk dibuka di dalam aplikasi Telegram.');
+      }
+    });
+  </script>
+</body>
+</html>
